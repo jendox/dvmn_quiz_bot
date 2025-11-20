@@ -154,7 +154,11 @@ def main():
         load_dotenv()
         logging.basicConfig(
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
-        redis = connect_redis()
+        host = os.environ["REDIS_HOST"]
+        port = int(os.environ["REDIS_PORT"])
+        username = os.environ["REDIS_USERNAME"]
+        password = os.environ["REDIS_PASSWORD"]
+        redis = connect_redis(host, port, username, password)
         vk_session = vk.VkApi(token=os.environ["VK_TOKEN"])
         vk_api = vk_session.get_api()
         long_poll = VkLongPoll(vk_session)
@@ -162,7 +166,7 @@ def main():
             if event.type == VkEventType.MESSAGE_NEW and event.to_me:
                 process_events(event, vk_api)
     except KeyboardInterrupt:
-        print("Завершение работы")
+        logging.info("Завершение работы")
 
 
 if __name__ == "__main__":

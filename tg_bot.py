@@ -105,7 +105,11 @@ def main():
     logging.basicConfig(
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
     )
-    redis = connect_redis()
+    host = os.environ["REDIS_HOST"]
+    port = int(os.environ["REDIS_PORT"])
+    username = os.environ["REDIS_USERNAME"]
+    password = os.environ["REDIS_PASSWORD"]
+    redis = connect_redis(host, port, username, password)
     token = os.environ["TELEGRAM_TOKEN"]
     application = Application.builder().token(token=token).build()
     application.bot_data["quiz"] = load_questions()
