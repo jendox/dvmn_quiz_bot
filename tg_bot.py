@@ -3,11 +3,15 @@ import os
 import random
 from enum import Enum, auto
 
+from dotenv import load_dotenv
+from redis import Redis
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 
 from quiz import load_questions, is_answer_correct
-from redis_client import redis
+from redis_client import connect_redis
+
+redis: Redis | None = None
 
 
 class State(int, Enum):
@@ -32,10 +36,6 @@ def _create_keyboard() -> ReplyKeyboardMarkup:
 reply_keyboard = _create_keyboard()
 
 
-def tg_user_id(user_id: int) -> str:
-    return f"telegram_{user_id}"
-
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_html(
         text="Привет! Я бот для викторин!",
@@ -45,7 +45,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def handle_new_question_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     quiz: dict[str, str] = context.bot_data["quiz"]
-    user_id = tg_user_id(update.effective_user.id)
+    user_id = f"telegram_{update.effective_user.id}"
     question = random.choice(list(quiz.keys()))
     redis.set(user_id, question)
     await update.message.reply_text(text=question, reply_markup=reply_keyboard)
@@ -54,7 +54,7 @@ async def handle_new_question_request(update: Update, context: ContextTypes.DEFA
 
 async def handle_solution_attempt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     quiz: dict[str, str] = context.bot_data["quiz"]
-    user_id = tg_user_id(update.effective_user.id)
+    user_id = f"telegram_{update.effective_user.id}"
     user_answer = update.message.text.strip()
 
     question = redis.get(user_id)
@@ -76,7 +76,7 @@ async def handle_solution_attempt(update: Update, context: ContextTypes.DEFAULT_
 
 async def give_up_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     quiz: dict[str, str] = context.bot_data["quiz"]
-    user_id = tg_user_id(update.effective_user.id)
+    user_id = f"telegram_{update.effective_user.id}"
 
     question = redis.get(user_id)
 
@@ -99,7 +99,14 @@ async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 def main():
-    token = os.getenv("TELEGRAM_TOKEN")
+    global redis
+
+    load_dotenv()
+    logging.basicConfig(
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    )
+    redis = connect_redis()
+    token = os.environ["TELEGRAM_TOKEN"]
     application = Application.builder().token(token=token).build()
     application.bot_data["quiz"] = load_questions()
 
@@ -121,6 +128,4 @@ def main():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
     main()

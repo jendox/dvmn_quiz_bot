@@ -1,15 +1,19 @@
 import logging
+import os
 import random
 from enum import Enum, auto
 
 import vk_api as vk
+from dotenv import load_dotenv
+from redis import Redis
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 from vk_api.longpoll import VkLongPoll, VkEventType, Event
 from vk_api.vk_api import VkApiMethod
 
-from config import Config
 from quiz import load_questions, is_answer_correct
-from redis_client import redis
+from redis_client import connect_redis
+
+redis: Redis | None = None
 
 
 class State(int, Enum):
@@ -17,10 +21,6 @@ class State(int, Enum):
 
 
 user_states = {}
-
-
-def vk_user_id(user_id: int) -> str:
-    return f"vk_{user_id}"
 
 
 def create_keyboard():
@@ -52,13 +52,13 @@ def send_message(vk_api: VkApiMethod, user_id: int, message: str, keyboard: str 
 
 def handle_new_question_request(vk_api: VkApiMethod, user_id: int) -> None:
     question = random_question()
-    redis.set(vk_user_id(user_id), question)
+    redis.set(f"vk_{user_id}", question)
     user_states[user_id] = State.ANSWER
     send_message(vk_api, user_id, question, reply_keyboard)
 
 
 def handle_solution_attempt(vk_api: VkApiMethod, user_id: int, user_answer: str) -> None:
-    question = redis.get(vk_user_id(user_id))
+    question = redis.get(f"vk_{user_id}")
     if not question:
         send_message(
             vk_api,
@@ -88,7 +88,7 @@ def handle_solution_attempt(vk_api: VkApiMethod, user_id: int, user_answer: str)
 
 
 def handle_give_up(vk_api: VkApiMethod, user_id: int) -> None:
-    question = redis.get(vk_user_id(user_id))
+    question = redis.get(f"vk_{user_id}")
 
     if not question:
         send_message(
@@ -109,7 +109,7 @@ def handle_give_up(vk_api: VkApiMethod, user_id: int) -> None:
     )
 
     new_question = random_question()
-    redis.set(vk_user_id(user_id), new_question)
+    redis.set(f"vk_{user_id}", new_question)
     send_message(
         vk_api,
         user_id,
@@ -149,18 +149,21 @@ def process_events(event: Event, vk_api: VkApiMethod) -> None:
 
 
 def main():
-    vk_session = vk.VkApi(token=Config.VK_TOKEN)
-    vk_api = vk_session.get_api()
-    long_poll = VkLongPoll(vk_session)
-    for event in long_poll.listen():
-        if event.type == VkEventType.MESSAGE_NEW and event.to_me:
-            process_events(event, vk_api)
+    global redis
+    try:
+        load_dotenv()
+        logging.basicConfig(
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+        redis = connect_redis()
+        vk_session = vk.VkApi(token=os.environ["VK_TOKEN"])
+        vk_api = vk_session.get_api()
+        long_poll = VkLongPoll(vk_session)
+        for event in long_poll.listen():
+            if event.type == VkEventType.MESSAGE_NEW and event.to_me:
+                process_events(event, vk_api)
+    except KeyboardInterrupt:
+        print("Завершение работы")
 
 
 if __name__ == "__main__":
-    try:
-        logging.basicConfig(
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
-        main()
-    except KeyboardInterrupt:
-        print("Завершение работы")
+    main()
